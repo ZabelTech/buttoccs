@@ -1,0 +1,8 @@
+lib: [
+  "_build/install/default/lib/buttoccs/META"
+  "_build/install/default/lib/buttoccs/dune-package"
+  "_build/install/default/lib/buttoccs/opam"
+]
+bin: [
+  "_build/install/default/bin/buttoccs"
+]

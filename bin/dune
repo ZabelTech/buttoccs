@@ -1,0 +1,4 @@
+(executable
+ (public_name buttoccs)
+ (name main)
+ (libraries buttoccs bitstring))

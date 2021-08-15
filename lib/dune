@@ -1,0 +1,6 @@
+(library
+ (name buttoccs)
+ (libraries bitstring integers)
+ (preprocess
+  (pps ppx_bitstring))
+)
