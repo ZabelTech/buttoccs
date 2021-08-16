@@ -2,8 +2,14 @@ type ipv4          = IPv4 of int32
 type uint16        = UINT16
 type connection_id = int64
 
-type header = {
-    action:         int32;
+type _ action =
+  | Announce : 'announce action
+  | Connect  : 'connect action
+  | Scrape   : 'scrape action
+  | Error    : 'error action
+
+type 'a header = {
+    action        : 'a action;
     transaction_id: int32;
   }
 
@@ -14,8 +20,8 @@ module Request = struct
              | Stopped
   type info_hash = InfoHash of bytes  (* [20] *)
   type peer_id   = PeerId of bytes  (* [20] *)
-  type announce  = { info_hash : info_hash;
-                     peer_id   : peer_id;
+  type announce  = { info_hash  : info_hash;
+                     peer_id    : peer_id;
                      downloaded : int64;
                      left       : int64;
                      uploaded   : int64;
@@ -51,8 +57,8 @@ module Response = struct
     | Announce : announce -> announce payload
     | Scrape   : scrape   -> scrape payload
     | Connect  : connect  -> connect payload
-    | Error    : error  -> connect payload
+    | Error    : error    -> connect payload
 end
 
-type 'a request  = Request of connection_id * header * 'a Request.payload
-type 'a response = Request of header * 'a Response.payload
+type 'a request  = Request of connection_id * 'a header * 'a Request.payload
+type 'a response = Request of 'a header * 'a Response.payload
