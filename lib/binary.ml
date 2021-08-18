@@ -31,7 +31,6 @@ module Int64_binary : Binary with type t = int64 = struct
   type t = int64
   let slurp bs offset   = ok (offset + 8,get_int64_be bs offset)
   let barf  bs offset i = let _ = set_int64_be bs offset i in offset + 8
-
 end
 
 module Int32_binary : Binary with type t = int32 = struct
@@ -69,52 +68,21 @@ module Event_binary : Binary with type t = event = struct
 
   let barf = undefined
 end
-(* it must be possible to do the following more succinctly *)
 
-let action2Int : type a. a action -> int = function
-  | Connect  -> 0
-  | Announce -> 1
-  | Scrape   -> 2
-  | ErrorMsg -> 3
-
-module Connect_binary : Binary with type t = connect action = struct
-   type t = connect action
-
-   let slurp bs offset =
-     let* (offset,res) = Int32_binary.slurp bs offset
-     in if res == Int32.of_int 0 then ok (offset,Connect) else error UnexpectedAction
-
-   let barf bs offset a = Int32_binary.barf bs offset @@ Int32.of_int @@ action2Int a
+module type SomeAction = sig
+  type t
+  val constructor : t action
+  val idx : int
 end
 
-module Announce_binary : Binary with type t = announce action = struct
-   type t = announce action
-
-   let slurp bs offset =
-     let* (offset,res) = Int32_binary.slurp bs offset
-     in if res == Int32.of_int 1 then ok (offset,Announce) else error UnexpectedAction
-
-   let barf bs offset a = Int32_binary.barf bs offset @@ Int32.of_int @@ action2Int a
-end
-
-module Scrape_binary : Binary with type t = scrape action = struct
-   type t = scrape action
-
-   let slurp bs offset =
-     let* (offset,res) = Int32_binary.slurp bs offset
-     in if res == Int32.of_int 2 then ok (offset,Scrape) else error UnexpectedAction
-
-   let barf bs offset a = Int32_binary.barf bs offset @@ Int32.of_int @@ action2Int a
-end
-
-module Error_binary : Binary with type t = error_msg action = struct
-   type t = error_msg action
-
-   let slurp bs offset =
-     let* (offset,res) = Int32_binary.slurp bs offset
-     in if res == Int32.of_int 3 then ok (offset,ErrorMsg) else error UnexpectedAction
-
-   let barf bs offset a = Int32_binary.barf bs offset @@ Int32.of_int @@ action2Int a
+module Action_binary (A : SomeAction) : Binary = struct
+  type t = A.t action
+  let slurp bs offset =
+    let* (offset,res) = Int32_binary.slurp bs offset
+    in if Int32.to_int res = A.idx
+       then ok (offset,A.constructor)
+       else error UnexpectedAction
+  let barf bs offset _ = Int32_binary.barf bs offset @@ Int32.of_int @@ A.idx
 end
 
 module Connect_request_payload_binary : Binary with type t = connect Request.payload = struct
@@ -233,7 +201,6 @@ module Binary_request (M : Message_type) : Binary with type t = M.t request = st
       Ok (offset,Request (connection_id,header,payload))
 
   let barf  _ = undefined
-
 end
 
 module Binary_response (M : Message_type) : Binary with type t = M.t response = struct
