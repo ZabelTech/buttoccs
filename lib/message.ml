@@ -6,6 +6,8 @@ type connection_id = int64
    That's why I give it a private one, such that it will be able to do so.
    I assume there is a better way though.
  *)
+type 'a request  = private A
+type 'a response = private C
 type announce = private A
 type connect  = private C
 type scrape   = private S
@@ -69,5 +71,34 @@ module Response = struct
     | Error    : error_data    -> error payload
 end
 
-type 'a request  = Request  of connection_id * 'a header * 'a Request.payload
-type 'a response = Response of 'a header * 'a Response.payload
+type _ message_sing =
+  | ConnectReq  : connect  request  message_sing
+  | AnnounceReq : announce request  message_sing
+  | ScrapeReq   : scrape   request  message_sing
+  | ConnectRes  : connect  response message_sing
+  | AnnounceRes : announce response message_sing
+  | ScrapeRes   : scrape   response message_sing
+  | ErrorRes    : error    response message_sing
+
+type _ message =
+  | Request  : connection_id * 'a header * 'a Request.payload  -> ('a request) message
+  | Response :                 'a header * 'a Response.payload -> ('a response) message
+
+
+exception NoErrorReq
+
+let get_req_sing : type a. a action -> a request message_sing = function
+  | Connect  -> ConnectReq
+  | Announce -> AnnounceReq
+  | Scrape   -> ScrapeReq
+  | Error    -> raise NoErrorReq
+
+let get_res_sing : type a. a action -> a response message_sing = function
+  | Connect  -> ConnectRes
+  | Announce -> AnnounceRes
+  | Scrape   -> ScrapeRes
+  | Error   -> ErrorRes
+
+let get_message_sing : type a. a message -> a message_sing = function
+  | (Request (_,h,_)) -> get_req_sing h.action
+  | (Response (h,_))  -> get_res_sing h.action
