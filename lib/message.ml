@@ -97,7 +97,7 @@ let get_res_sing : type a. a action -> a response message_sing = function
   | Connect  -> ConnectRes
   | Announce -> AnnounceRes
   | Scrape   -> ScrapeRes
-  | Error   -> ErrorRes
+  | Error    -> ErrorRes
 
 let get_message_sing : type a. a message -> a message_sing = function
   | (Request (_,h,_)) -> get_req_sing h.action

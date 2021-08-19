@@ -20,7 +20,7 @@ module type Binary = sig
   val barf  : bytes -> int -> t -> int
 end
 
-module type SomeAction = sig
+module type Some_action = sig
   type t
   val constructor : t action
   val idx : int
@@ -28,14 +28,14 @@ end
 
 module type Request_type = sig
   type t
-  module Action   : SomeAction with type t := t
+  module Action   : Some_action with type t := t
   module Header   : Binary with type t     := t header
   module Payload  : Binary with type t     := t Request.payload
 end
 
 module type Response_type = sig
   type t
-  module Action   : SomeAction with type t := t
+  module Action   : Some_action with type t := t
   module Header   : Binary with type t     := t header
   module Payload  : Binary with type t     := t Response.payload
 end
@@ -88,7 +88,7 @@ end
    to create an instance for each constructor on the fly.
  *)
 
-module Action_binary (A : SomeAction) : Binary with type t := A.t action = struct
+module Action_binary (A : Some_action) : Binary with type t := A.t action = struct
   let slurp bs offset =
     let* (offset,res) = Int32_binary.slurp bs offset
     in if Int32.to_int res = A.idx
@@ -234,7 +234,7 @@ module Error_response_payload_binary : Binary with type t := error Response.payl
     len
 end
 
-module Binary_header (A : SomeAction) : Binary with type t := A.t header = struct
+module Binary_header (A : Some_action) : Binary with type t := A.t header = struct
   module B = Action_binary(A)
   let slurp bs offset =
     let* (offset,action)         = B.slurp bs offset in
@@ -272,87 +272,87 @@ module Binary_response (M : Response_type) : Binary with type t = M.t response m
     M.Payload.barf bs offset payload
 end
 
-module ConnectAction : SomeAction with type t = connect = struct
+module Connect_action : Some_action with type t = connect = struct
   type t          = connect
   let idx         = 0
   let constructor = Connect
 end
 
-module AnnounceAction : SomeAction with type t = announce = struct
+module Announce_action : Some_action with type t = announce = struct
   type t          = announce
   let idx         = 0
   let constructor = Announce
 end
 
-module ScrapeAction : SomeAction with type t = scrape = struct
+module Scrape_action : Some_action with type t = scrape = struct
   type t          = scrape
   let idx         = 0
   let constructor = Scrape
 end
 
-module ErrorAction : SomeAction with type t = error = struct
+module Error_action : Some_action with type t = error = struct
   type t          = error
   let idx         = 0
   let constructor = Error
 end
 
-module ConnectRequest : Request_type with type t = connect = struct
+module Connect_request : Request_type with type t = connect = struct
   type t = connect
-  module Action   = ConnectAction
+  module Action   = Connect_action
   module Header   = Binary_header(Action)
   module Payload  = Connect_request_payload_binary
 end
 
-module AnnounceRequest : Request_type with type t = announce = struct
+module Announce_request : Request_type with type t = announce = struct
   type t = announce
-  module Action   = AnnounceAction
+  module Action   = Announce_action
   module Header   = Binary_header(Action)
   module Payload  = Announce_request_payload_binary
 end
 
-module ScrapeRequest : Request_type with type t = scrape = struct
+module Scrape_request : Request_type with type t = scrape = struct
   type t = scrape
-  module Action   = ScrapeAction
+  module Action   = Scrape_action
   module Header   = Binary_header(Action)
   module Payload  = Scrape_request_payload_binary
 end
 
-module ConnectResponse : Response_type with type t = connect = struct
+module Connect_response : Response_type with type t = connect = struct
   type t = connect
-  module Action   = ConnectAction
+  module Action   = Connect_action
   module Header   = Binary_header(Action)
   module Payload  = Connect_response_payload_binary
 end
 
-module AnnounceResponse : Response_type with type t = announce = struct
+module Announce_response : Response_type with type t = announce = struct
   type t = announce
-  module Action   = AnnounceAction
+  module Action   = Announce_action
   module Header   = Binary_header(Action)
   module Payload  = Announce_response_payload_binary
 end
 
-module ScrapeResponse : Response_type with type t = scrape = struct
+module Scrape_response : Response_type with type t = scrape = struct
   type t = scrape
-  module Action   = ScrapeAction
+  module Action   = Scrape_action
   module Header   = Binary_header(Action)
   module Payload  = Scrape_response_payload_binary
 end
 
-module ErrorResponse : Response_type with type t = error = struct
+module Error_response : Response_type with type t = error = struct
   type t = error
-  module Action   = ErrorAction
+  module Action   = Error_action
   module Header   = Binary_header(Action)
   module Payload  = Error_response_payload_binary
 end
 
 let get_binary_message : type a. a message_sing -> (module Binary with type t = a message) = function
-  | ConnectReq  -> (module Binary_request(ConnectRequest))
-  | AnnounceReq -> (module Binary_request(AnnounceRequest))
-  | ScrapeReq   -> (module Binary_request(ScrapeRequest))
-  | ConnectRes  -> (module Binary_response(ConnectResponse))
-  | AnnounceRes -> (module Binary_response(AnnounceResponse))
-  | ScrapeRes   -> (module Binary_response(ScrapeResponse))
-  | ErrorRes    -> (module Binary_response(ErrorResponse))
+  | ConnectReq  -> (module Binary_request(Connect_request))
+  | AnnounceReq -> (module Binary_request(Announce_request))
+  | ScrapeReq   -> (module Binary_request(Scrape_request))
+  | ConnectRes  -> (module Binary_response(Connect_response))
+  | AnnounceRes -> (module Binary_response(Announce_response))
+  | ScrapeRes   -> (module Binary_response(Scrape_response))
+  | ErrorRes    -> (module Binary_response(Error_response))
 
 let parse_message (type a) (bs : bytes) (message_sing : a message_sing) =
   let m = get_binary_message message_sing in
