@@ -63,6 +63,16 @@ module Bytes20_binary : Binary with type t := bytes = struct
   let barf  = put_sized 20 (fun bs offset x -> blit x 0 bs offset 20)
 end
 
+module String_binary : Binary with type t := string = struct
+  let slurp bs offset =
+    let rest_length = length bs - offset in
+    get_sized rest_length (fun _ _ -> sub_string bs offset rest_length) bs offset
+
+  let barf bs offset x =
+    let len = String.length x in
+    put_sized len (fun _ _ _ -> blit_string x 0 bs offset len) bs offset x
+end
+
 module Event_binary : Binary with type t := event = struct
   let int2Event = function
     | 0 -> ok None
@@ -83,196 +93,6 @@ module Event_binary : Binary with type t := event = struct
     ok (offset,event)
 
   let barf bs offset i = Int32_binary.barf bs offset @@ Int32.of_int @@ event2Int i
-end
-
-(* Not ideal.
-   I don't want a binary instance per gadt constructor here.
-   Instead I have a Functor and a module-type that serves as its argument,
-   to create an instance for each constructor on the fly.
- *)
-
-module Action_binary (A : Some_action) : Binary with type t := A.t action = struct
-  let slurp bs offset =
-    let* (offset,res) = Int32_binary.slurp bs offset
-    in if Int32.to_int res = A.idx
-       then ok (offset,A.constructor)
-       else error UnexpectedAction
-
-  let barf bs offset _ = Int32_binary.barf bs offset @@ Int32.of_int @@ A.idx
-end
-
-module Connect_request_payload_binary : Binary with type t = connect Request.payload= struct
-  type t = connect Request.payload
-  open Request
-  let slurp _ offset   = ok (offset,Connect)
-  let barf  _ offset _ = offset
-end
-
-module Connect_response_payload_binary : Binary with type t := connect Response.payload = struct
-  include Response
-
-  let slurp bs offset =
-    let* (offset,connection_id) = Int64_binary.slurp bs offset
-    in ok (offset, Connect {connection_id = connection_id})
-
-  let barf bs offset (Connect x) = Int64_binary.barf bs offset x.connection_id
-end
-
-module Announce_request_payload_binary : (Binary with type t := announce Request.payload) = struct
-  open Request
-
-  let slurp bs offset =
-    let* (offset,info_hash)  = Bytes20_binary.slurp bs offset in
-    let* (offset,peer_id)    = Bytes20_binary.slurp bs offset in
-    let* (offset,downloaded) = Int64_binary.slurp bs offset in
-    let* (offset,left)       = Int64_binary.slurp bs offset in
-    let* (offset,uploaded)   = Int64_binary.slurp bs offset in
-    let* (offset,event)      = Event_binary.slurp bs offset in
-    let* (offset,ip)         = Int32_binary.slurp bs offset in
-    let* (offset,key)        = Int32_binary.slurp bs offset in
-    let* (offset,num_want)   = Int32_binary.slurp bs offset in
-    let* (offset,port)       = UInt16_binary.slurp bs offset in
-    ok (offset, Announce { info_hash  = InfoHash info_hash;
-                           peer_id    = PeerId peer_id;
-                           downloaded = downloaded;
-                           left       = left;
-                           uploaded   = uploaded;
-                           event      = event;
-                           ip         = IPv4 ip;
-                           key        = key;
-                           num_want   = num_want;
-                           port       = port; })
-
-  let barf bs offset (Announce x) =
-    let (InfoHash info_hash) = x.info_hash in
-    let (PeerId peer_id)     = x.peer_id in
-    let (IPv4 ip)            = x.ip in
-    let offset = Bytes20_binary.barf bs offset info_hash in
-    let offset = Bytes20_binary.barf bs offset peer_id in
-    let offset = Int64_binary.barf bs offset x.downloaded in
-    let offset = Int64_binary.barf bs offset x.left in
-    let offset = Int64_binary.barf bs offset x.uploaded in
-    let offset = Event_binary.barf bs offset x.event in
-    let offset = Int32_binary.barf bs offset ip in
-    let offset = Int32_binary.barf bs offset x.key in
-    let offset = Int32_binary.barf bs offset x.num_want in
-    UInt16_binary.barf bs offset x.port
-end
-
-module Announce_response_payload_binary : Binary with type t := announce Response.payload = struct
-  open Response
-
-  let rec slurpPeers peers bs = function
-    | offset when offset >= length bs -> ok (offset,peers)
-    | offset ->
-       let* (offset,ip)   = Int32_binary.slurp bs offset in
-       let* (offset,port) = UInt16_binary.slurp bs offset in
-       let peers          = {ip = IPv4 ip; port = port} :: peers in
-       slurpPeers peers bs offset
-
-  let slurp bs offset =
-    let* (offset,interval) = Int32_binary.slurp bs offset in
-    let* (offset,leechers) = Int32_binary.slurp bs offset in
-    let* (offset,seeders)  = Int32_binary.slurp bs offset in
-    let* (offset,peers)    = slurpPeers [] bs offset in
-    ok (offset,Announce { interval = interval;
-                          leechers = leechers;
-                          seeders  = seeders;
-                          peers    = peers })
-
-  let rec barf_peers bs offset = function
-    | (peer :: peers) ->
-       let (IPv4 ip) = peer.ip in
-       let offset = Int32_binary.barf bs offset ip in
-       let offset = UInt16_binary.barf bs offset peer.port in
-       barf_peers bs offset peers
-    | _ -> offset
-
-  let barf bs offset (Announce x)=
-    let offset = Int32_binary.barf bs offset x.interval in
-    let offset = Int32_binary.barf bs offset x.leechers in
-    let offset = Int32_binary.barf bs offset x.seeders in
-    barf_peers bs offset x.peers
-end
-
-module Scrape_response_payload_binary : Binary with type t := scrape Response.payload = struct
-  open Response
-
-  let slurp bs offset =
-    let* (offset,complete)   = Int32_binary.slurp bs offset in
-    let* (offset,downloaded) = Int32_binary.slurp bs offset in
-    let* (offset,incomplete) = Int32_binary.slurp bs offset in
-    ok (offset,Scrape { complete   = complete;
-                        downloaded = downloaded;
-                        incomplete = incomplete; })
-
-  let barf bs offset (Scrape x) =
-    let offset = Int32_binary.barf bs offset x.complete in
-    let offset = Int32_binary.barf bs offset x.downloaded in
-    Int32_binary.barf bs offset x.incomplete
-end
-
-module Scrape_request_payload_binary : Binary with type t := scrape Request.payload = struct
-  open Request
-
-  let slurp bs offset =
-    let* (offset,info_hash) = Bytes20_binary.slurp bs offset in
-    ok (offset,Scrape { info_hash = InfoHash info_hash })
-
-  let barf bs offset (Scrape x) =
-    let (InfoHash info_hash) = x.info_hash in
-    Bytes20_binary.barf bs offset info_hash
-end
-
-module Error_response_payload_binary : Binary with type t := error Response.payload = struct
-  open Response
-
-  let slurp bs offset =
-    let len = length bs in
-    ok (len,Error { error = sub_string bs offset @@ len - offset })
-
-  let barf bs offset (Error x) =
-    let len = String.length x.error in
-    let ()  = blit_string x.error 0 bs offset len in
-    len
-end
-
-module Binary_header (A : Some_action) : Binary with type t := A.t header = struct
-  module B = Action_binary(A)
-  let slurp bs offset =
-    let* (offset,action)         = B.slurp bs offset in
-    let* (offset,transaction_id) = Int32_binary.slurp bs offset in
-    ok (offset,{ action = action; transaction_id = transaction_id; })
-
-  let barf bs offset x =
-    let offset = B.barf bs offset x.action in
-    Int32_binary.barf bs offset x.transaction_id
-end
-
-module Binary_request (R : Some_request) : Binary with type t = R.t request message = struct
-  type t = R.t request message
-  let slurp bs offset =
-    let* (offset,connection_id) = Int64_binary.slurp bs offset in
-    let* (offset,header)        = R.Header.slurp bs offset in
-    let* (offset,payload)       = R.Payload.slurp bs offset in
-    Ok (offset,Request (connection_id,header,payload))
-
-  let barf bs offset (Request (connection_id,header,payload)) =
-    let offset = Int64_binary.barf bs offset connection_id in
-    let offset = R.Header.barf bs offset header in
-    R.Payload.barf bs offset payload
-end
-
-module Binary_response (R : Some_response) : Binary with type t = R.t response message = struct
-  type t = R.t response message
-  let slurp bs offset =
-    let* (offset,header)  = R.Header.slurp bs offset in
-    let* (offset,payload) = R.Payload.slurp bs offset in
-    Ok (offset,(Response (header,payload)))
-
-  let barf bs offset (Response (header,payload)) =
-    let offset = R.Header.barf bs offset header in
-    R.Payload.barf bs offset payload
 end
 
 module Connect_action : Some_action with type t = connect = struct
@@ -299,53 +119,236 @@ module Error_action : Some_action with type t = error = struct
   let constructor = Error
 end
 
+(* Not ideal.
+   I don't want a binary instance per gadt constructor here.
+   Instead I have a Functor and a module-type that serves as its argument,
+   to create an instance for each constructor on the fly.
+ *)
+
+module Action_binary (A : Some_action) : Binary with type t := A.t action = struct
+  let slurp bs offset =
+    let* (offset,res) = Int32_binary.slurp bs offset
+    in if Int32.to_int res = A.idx
+       then ok (offset,A.constructor)
+       else error UnexpectedAction
+
+  let barf bs offset _ = Int32_binary.barf bs offset @@ Int32.of_int @@ A.idx
+end
+
+module Binary_header (A : Some_action) : Binary with type t := A.t header = struct
+  module B = Action_binary(A)
+
+  let slurp bs offset =
+    let* (offset,action)         = B.slurp bs offset in
+    let* (offset,transaction_id) = Int32_binary.slurp bs offset in
+    ok (offset,{ action = action; transaction_id = transaction_id; })
+
+  let barf bs offset x =
+    let offset = B.barf bs offset x.action in
+    Int32_binary.barf bs offset x.transaction_id
+end
+
+module Binary_request (R : Some_request) : Binary with type t = R.t request message = struct
+  type t = R.t request message
+
+  let slurp bs offset =
+    let* (offset,connection_id) = Int64_binary.slurp bs offset in
+    let* (offset,header)        = R.Header.slurp bs offset in
+    let* (offset,payload)       = R.Payload.slurp bs offset in
+    Ok (offset,Request (connection_id,header,payload))
+
+  let barf bs offset (Request (connection_id,header,payload)) =
+    let offset = Int64_binary.barf bs offset connection_id in
+    let offset = R.Header.barf bs offset header in
+    R.Payload.barf bs offset payload
+end
+
+module Binary_response (R : Some_response) : Binary with type t = R.t response message = struct
+  type t = R.t response message
+
+  let slurp bs offset =
+    let* (offset,header)  = R.Header.slurp bs offset in
+    let* (offset,payload) = R.Payload.slurp bs offset in
+    Ok (offset,(Response (header,payload)))
+
+  let barf bs offset (Response (header,payload)) =
+    let offset = R.Header.barf bs offset header in
+    R.Payload.barf bs offset payload
+end
+
 module Connect_request : Some_request with type t = connect = struct
-  type t = connect
-  module Action   = Connect_action
-  module Header   = Binary_header(Action)
-  module Payload  = Connect_request_payload_binary
+  type t        = connect
+  module Action = Connect_action
+  module Header = Binary_header(Action)
+
+  module Payload : Binary with type t = connect Request.payload= struct
+    open Request
+    type t = connect Request.payload
+    let slurp _ offset   = ok (offset,Connect)
+    let barf  _ offset _ = offset
+  end
 end
 
 module Announce_request : Some_request with type t = announce = struct
-  type t = announce
-  module Action   = Announce_action
-  module Header   = Binary_header(Action)
-  module Payload  = Announce_request_payload_binary
+  type t        = announce
+  module Action = Announce_action
+  module Header = Binary_header(Action)
+
+  module Payload : Binary with type t := announce Request.payload = struct
+    open Request
+
+    let slurp bs offset =
+      let* (offset,info_hash)  = Bytes20_binary.slurp bs offset in
+      let* (offset,peer_id)    = Bytes20_binary.slurp bs offset in
+      let* (offset,downloaded) = Int64_binary.slurp bs offset in
+      let* (offset,left)       = Int64_binary.slurp bs offset in
+      let* (offset,uploaded)   = Int64_binary.slurp bs offset in
+      let* (offset,event)      = Event_binary.slurp bs offset in
+      let* (offset,ip)         = Int32_binary.slurp bs offset in
+      let* (offset,key)        = Int32_binary.slurp bs offset in
+      let* (offset,num_want)   = Int32_binary.slurp bs offset in
+      let* (offset,port)       = UInt16_binary.slurp bs offset in
+      ok (offset, Announce { info_hash  = InfoHash info_hash;
+                             peer_id    = PeerId peer_id;
+                             downloaded = downloaded;
+                             left       = left;
+                             uploaded   = uploaded;
+                             event      = event;
+                             ip         = IPv4 ip;
+                             key        = key;
+                             num_want   = num_want;
+                             port       = port; })
+
+    let barf bs offset (Announce x) =
+      let (InfoHash info_hash) = x.info_hash in
+      let (PeerId peer_id)     = x.peer_id in
+      let (IPv4 ip)            = x.ip in
+      let offset = Bytes20_binary.barf bs offset info_hash in
+      let offset = Bytes20_binary.barf bs offset peer_id in
+      let offset = Int64_binary.barf bs offset x.downloaded in
+      let offset = Int64_binary.barf bs offset x.left in
+      let offset = Int64_binary.barf bs offset x.uploaded in
+      let offset = Event_binary.barf bs offset x.event in
+      let offset = Int32_binary.barf bs offset ip in
+      let offset = Int32_binary.barf bs offset x.key in
+      let offset = Int32_binary.barf bs offset x.num_want in
+      UInt16_binary.barf bs offset x.port
+  end
 end
 
 module Scrape_request : Some_request with type t = scrape = struct
-  type t = scrape
-  module Action   = Scrape_action
-  module Header   = Binary_header(Action)
-  module Payload  = Scrape_request_payload_binary
+  type t        = scrape
+  module Action = Scrape_action
+  module Header = Binary_header(Action)
+
+  module Payload : Binary with type t := scrape Request.payload = struct
+    open Request
+
+    let slurp bs offset =
+      let* (offset,info_hash) = Bytes20_binary.slurp bs offset in
+      ok (offset,Scrape { info_hash = InfoHash info_hash })
+
+    let barf bs offset (Scrape x) =
+      let (InfoHash info_hash) = x.info_hash in
+      Bytes20_binary.barf bs offset info_hash
+  end
 end
 
 module Connect_response : Some_response with type t = connect = struct
-  type t = connect
-  module Action   = Connect_action
-  module Header   = Binary_header(Action)
-  module Payload  = Connect_response_payload_binary
+  type t        = connect
+  module Action = Connect_action
+  module Header = Binary_header(Action)
+
+  module Payload : Binary with type t := connect Response.payload = struct
+    open Response
+
+    let slurp bs offset =
+      let* (offset,connection_id) = Int64_binary.slurp bs offset
+      in ok (offset, Connect {connection_id = connection_id})
+
+    let barf bs offset (Connect x) = Int64_binary.barf bs offset x.connection_id
+  end
 end
 
 module Announce_response : Some_response with type t = announce = struct
-  type t = announce
-  module Action   = Announce_action
-  module Header   = Binary_header(Action)
-  module Payload  = Announce_response_payload_binary
+  type t        = announce
+  module Action = Announce_action
+  module Header = Binary_header(Action)
+
+  module Payload : Binary with type t := announce Response.payload = struct
+    open Response
+
+    let rec slurpPeers peers bs = function
+      | offset when offset >= length bs -> ok (offset,peers)
+      | offset ->
+         let* (offset,ip)   = Int32_binary.slurp bs offset in
+         let* (offset,port) = UInt16_binary.slurp bs offset in
+         let peers          = {ip = IPv4 ip; port = port} :: peers in
+         slurpPeers peers bs offset
+
+    let slurp bs offset =
+      let* (offset,interval) = Int32_binary.slurp bs offset in
+      let* (offset,leechers) = Int32_binary.slurp bs offset in
+      let* (offset,seeders)  = Int32_binary.slurp bs offset in
+      let* (offset,peers)    = slurpPeers [] bs offset in
+      ok (offset,Announce { interval = interval;
+                            leechers = leechers;
+                            seeders  = seeders;
+                            peers    = peers })
+
+    let rec barf_peers bs offset = function
+      | (peer :: peers) ->
+         let (IPv4 ip) = peer.ip in
+         let offset = Int32_binary.barf bs offset ip in
+         let offset = UInt16_binary.barf bs offset peer.port in
+         barf_peers bs offset peers
+      | _ -> offset
+
+    let barf bs offset (Announce x)=
+      let offset = Int32_binary.barf bs offset x.interval in
+      let offset = Int32_binary.barf bs offset x.leechers in
+      let offset = Int32_binary.barf bs offset x.seeders in
+      barf_peers bs offset x.peers
+  end
 end
 
 module Scrape_response : Some_response with type t = scrape = struct
-  type t = scrape
-  module Action   = Scrape_action
-  module Header   = Binary_header(Action)
-  module Payload  = Scrape_response_payload_binary
+  type t        = scrape
+  module Action = Scrape_action
+  module Header = Binary_header(Action)
+
+  module Payload : Binary with type t := scrape Response.payload = struct
+    open Response
+
+    let slurp bs offset =
+      let* (offset,complete)   = Int32_binary.slurp bs offset in
+      let* (offset,downloaded) = Int32_binary.slurp bs offset in
+      let* (offset,incomplete) = Int32_binary.slurp bs offset in
+      ok (offset,Scrape { complete   = complete;
+                          downloaded = downloaded;
+                          incomplete = incomplete; })
+
+    let barf bs offset (Scrape x) =
+      let offset = Int32_binary.barf bs offset x.complete in
+      let offset = Int32_binary.barf bs offset x.downloaded in
+      Int32_binary.barf bs offset x.incomplete
+  end
 end
 
 module Error_response : Some_response with type t = error = struct
-  type t = error
-  module Action   = Error_action
-  module Header   = Binary_header(Action)
-  module Payload  = Error_response_payload_binary
+  type t        = error
+  module Action = Error_action
+  module Header = Binary_header(Action)
+
+  module Payload : Binary with type t := error Response.payload = struct
+    open Response
+
+    let slurp bs offset =
+      let* (offset,str) = String_binary.slurp bs offset in
+      ok (offset,Error { error = str })
+
+    let barf bs offset (Error x) = String_binary.barf bs offset x.error
+  end
 end
 
 let get_binary_message : type a. a message_sing -> (module Binary with type t = a message) = function
