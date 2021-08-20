@@ -29,14 +29,14 @@ module type Some_action = sig
   val idx : int
 end
 
-module type Request_type = sig
+module type Some_request = sig
   type t
   module Action   : Some_action with type t := t
   module Header   : Binary with type t     := t header
   module Payload  : Binary with type t     := t Request.payload
 end
 
-module type Response_type = sig
+module type Some_response = sig
   type t
   module Action   : Some_action with type t := t
   module Header   : Binary with type t     := t header
@@ -249,30 +249,30 @@ module Binary_header (A : Some_action) : Binary with type t := A.t header = stru
     Int32_binary.barf bs offset x.transaction_id
 end
 
-module Binary_request (M : Request_type) : Binary with type t = M.t request message = struct
-  type t = M.t request message
+module Binary_request (R : Some_request) : Binary with type t = R.t request message = struct
+  type t = R.t request message
   let slurp bs offset =
     let* (offset,connection_id) = Int64_binary.slurp bs offset in
-    let* (offset,header)        = M.Header.slurp bs offset in
-    let* (offset,payload)       = M.Payload.slurp bs offset in
+    let* (offset,header)        = R.Header.slurp bs offset in
+    let* (offset,payload)       = R.Payload.slurp bs offset in
     Ok (offset,Request (connection_id,header,payload))
 
   let barf bs offset (Request (connection_id,header,payload)) =
     let offset = Int64_binary.barf bs offset connection_id in
-    let offset = M.Header.barf bs offset header in
-    M.Payload.barf bs offset payload
+    let offset = R.Header.barf bs offset header in
+    R.Payload.barf bs offset payload
 end
 
-module Binary_response (M : Response_type) : Binary with type t = M.t response message = struct
-  type t = M.t response message
+module Binary_response (R : Some_response) : Binary with type t = R.t response message = struct
+  type t = R.t response message
   let slurp bs offset =
-    let* (offset,header)  = M.Header.slurp bs offset in
-    let* (offset,payload) = M.Payload.slurp bs offset in
+    let* (offset,header)  = R.Header.slurp bs offset in
+    let* (offset,payload) = R.Payload.slurp bs offset in
     Ok (offset,(Response (header,payload)))
 
   let barf bs offset (Response (header,payload)) =
-    let offset = M.Header.barf bs offset header in
-    M.Payload.barf bs offset payload
+    let offset = R.Header.barf bs offset header in
+    R.Payload.barf bs offset payload
 end
 
 module Connect_action : Some_action with type t = connect = struct
@@ -299,49 +299,49 @@ module Error_action : Some_action with type t = error = struct
   let constructor = Error
 end
 
-module Connect_request : Request_type with type t = connect = struct
+module Connect_request : Some_request with type t = connect = struct
   type t = connect
   module Action   = Connect_action
   module Header   = Binary_header(Action)
   module Payload  = Connect_request_payload_binary
 end
 
-module Announce_request : Request_type with type t = announce = struct
+module Announce_request : Some_request with type t = announce = struct
   type t = announce
   module Action   = Announce_action
   module Header   = Binary_header(Action)
   module Payload  = Announce_request_payload_binary
 end
 
-module Scrape_request : Request_type with type t = scrape = struct
+module Scrape_request : Some_request with type t = scrape = struct
   type t = scrape
   module Action   = Scrape_action
   module Header   = Binary_header(Action)
   module Payload  = Scrape_request_payload_binary
 end
 
-module Connect_response : Response_type with type t = connect = struct
+module Connect_response : Some_response with type t = connect = struct
   type t = connect
   module Action   = Connect_action
   module Header   = Binary_header(Action)
   module Payload  = Connect_response_payload_binary
 end
 
-module Announce_response : Response_type with type t = announce = struct
+module Announce_response : Some_response with type t = announce = struct
   type t = announce
   module Action   = Announce_action
   module Header   = Binary_header(Action)
   module Payload  = Announce_response_payload_binary
 end
 
-module Scrape_response : Response_type with type t = scrape = struct
+module Scrape_response : Some_response with type t = scrape = struct
   type t = scrape
   module Action   = Scrape_action
   module Header   = Binary_header(Action)
   module Payload  = Scrape_response_payload_binary
 end
 
-module Error_response : Response_type with type t = error = struct
+module Error_response : Some_response with type t = error = struct
   type t = error
   module Action   = Error_action
   module Header   = Binary_header(Action)
