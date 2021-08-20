@@ -7,7 +7,10 @@ type parse_error = NotEnoughData
                  | UnexpectedAction
                  | UnknownEvent of int
 
-let ensure_size s b cont = if Bytes.length b < s then Result.Error NotEnoughData else cont
+let get_sized size fn bs offset =
+  if length bs - offset < size then error NotEnoughData else ok (offset + size, fn bs offset)
+
+let put_sized size fn bs offset x = let () = fn bs offset x in offset + size
 
 let (let*) o f =
   match o with
@@ -41,23 +44,23 @@ module type Response_type = sig
 end
 
 module Int64_binary : Binary with type t := int64 = struct
-  let slurp bs offset   = ok (offset + 8,get_int64_be bs offset)
-  let barf  bs offset i = let () = set_int64_be bs offset i in offset + 8
+  let slurp = get_sized 8 get_int64_be
+  let barf  = put_sized 8 set_int64_be
 end
 
 module Int32_binary : Binary with type t := int32 = struct
-  let slurp bs offset   = ok (offset + 4,get_int32_be bs offset)
-  let barf  bs offset i = let () = set_int32_be bs offset i in offset + 4
+  let slurp = get_sized 4 get_int32_be
+  let barf  = put_sized 4 set_int32_be
 end
 
 module UInt16_binary : Binary with type t := int = struct
-  let slurp bs offset   = ok (offset + 2,get_uint16_be bs offset)
-  let barf  bs offset i = let () = set_uint16_be bs offset i in offset + 2
+  let slurp = get_sized 2 get_uint16_be
+  let barf  = put_sized 2 set_uint16_be
 end
 
 module Bytes20_binary : Binary with type t := bytes = struct
-  let slurp bs offset   = ok (offset + 20,sub bs offset @@ offset + 20)
-  let barf  bs offset i = let () = blit i 0 bs offset 20 in offset + 20
+  let slurp = get_sized 20 (fun bs offset -> sub bs offset @@ offset + 20)
+  let barf  = put_sized 20 (fun bs offset x -> blit x 0 bs offset 20)
 end
 
 module Event_binary : Binary with type t := event = struct
