@@ -11,6 +11,10 @@ let get_sized size fn bs offset =
 
 let put_sized size fn bs offset x = let () = fn bs offset x in offset + size
 
+(* TODO use smth like this this for rws monad
+ * let (>>=) gen f st =
+ *   f (gen st) st *)
+
 let (let*) o f =
   match o with
   | Ok r    -> f r
@@ -147,8 +151,8 @@ module Binary_header (A : Some_action) : Binary with type t := A.t header = stru
     Int32_binary.barf bs offset x.transaction_id
 end
 
-module Binary_request (R : Some_request) : Binary with type t = R.t request message = struct
-  type t = R.t request message
+module Binary_request (R : Some_request) : Binary with type t = (R.t,request) message = struct
+  type t = (R.t,request) message
 
   let slurp bs offset =
     let* (offset,connection_id) = Int64_binary.slurp bs offset in
@@ -162,8 +166,8 @@ module Binary_request (R : Some_request) : Binary with type t = R.t request mess
     R.Payload.barf bs offset payload
 end
 
-module Binary_response (R : Some_response) : Binary with type t = R.t response message = struct
-  type t = R.t response message
+module Binary_response (R : Some_response) : Binary with type t = (R.t,response) message = struct
+  type t = (R.t,response) message
 
   let slurp bs offset =
     let* (offset,header)  = R.Header.slurp bs offset in
@@ -350,7 +354,7 @@ module Error_response : Some_response with type t = error = struct
   end
 end
 
-let get_binary_message : type a. a message_sing -> (module Binary with type t = a message) = function
+let get_binary_message : type a b. (a,b) message_sing -> (module Binary with type t = (a,b) message) = function
   | ConnectReq  -> (module Binary_request(Connect_request))
   | AnnounceReq -> (module Binary_request(Announce_request))
   | ScrapeReq   -> (module Binary_request(Scrape_request))
@@ -359,12 +363,12 @@ let get_binary_message : type a. a message_sing -> (module Binary with type t = 
   | ScrapeRes   -> (module Binary_response(Scrape_response))
   | ErrorRes    -> (module Binary_response(Error_response))
 
-let parse_message (type a) (bs : bytes) (message_sing : a message_sing) =
+let parse_message (type a) (type b) (bs : bytes) (message_sing : (a,b) message_sing) =
   let m = get_binary_message message_sing in
-  let module M = (val m : Binary with type t = a message) in
+  let module M = (val m : Binary with type t = (a,b) message) in
   M.slurp bs 0
 
-let build_message (type a) (bs : bytes) (message : a message) =
+let build_message (type a) (type b) (bs : bytes) (message : (a,b) message) =
   let m = get_binary_message (get_message_sing message) in
-  let module M = (val m : Binary with type t = a message) in
+  let module M = (val m : Binary with type t = (a,b) message) in
   M.barf bs 0 message
