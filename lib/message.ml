@@ -86,8 +86,6 @@ type (_,_) message =
   | Request  : connection_id * 'a header * 'a Request.payload  -> ('a,request) message
   | Response :                 'a header * 'a Response.payload -> ('a,response) message
 
-exception NoErrorReq
-
 let get_action_sing : type a b. (a,b) message_sing -> a action = function
   | ConnectReq  -> Connect
   | AnnounceReq -> Announce
@@ -106,3 +104,16 @@ let get_message_sing : type a b. (a,b) message -> (a,b) message_sing = function
   | (Response ({action = Announce; _},_)) -> AnnounceRes
   | (Response ({action = Scrape;   _},_)) -> ScrapeRes
   | (Response ({action = Error;   _},_))  -> ErrorRes
+
+type ('a,_) message_type_sing =
+  | SRequest : (('a,request)  message_sing) -> ('a,request) message_type_sing
+  | SResponse: (('a,response) message_sing) -> ('a,response) message_type_sing
+
+let mk_message_type_sing : type a b. (a,b) message_sing -> (a,b) message_type_sing = function
+  | ConnectReq  as a -> SRequest a
+  | AnnounceReq as a -> SRequest a
+  | ScrapeReq   as a -> SRequest a
+  | ConnectRes  as a -> SResponse a
+  | AnnounceRes as a -> SResponse a
+  | ScrapeRes   as a -> SResponse a
+  | ErrorRes    as a -> SResponse a
