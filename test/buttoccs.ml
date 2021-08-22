@@ -69,14 +69,14 @@ let gen_res_payload : type a. (a,response) message_sing -> a Response.payload Ge
   | ScrapeRes   -> gen_scrape_res_payload
   | ErrorRes    -> gen_string <$> fun error -> Response.Error { error; }
 
-let gen_mes_payload : type a b. (a,b) message_type_sing -> (a,b) message Gen.t  = function
-  | (SRequest req) ->
+let gen_message : type a b. (a,b) message_type_proof -> (a,b) message Gen.t  = function
+  | (Is_request req) ->
      let* c_id    = gen_i64 in
      let* header  = gen_header (get_action_sing req) in
      let* payload = gen_req_payload req
      in return @@ Request(c_id,header,payload)
 
-  | (SResponse res) ->
+  | (Is_response res) ->
      let* header  = gen_header (get_action_sing res) in
      let* payload = gen_res_payload res
      in return @@ Response(header,payload)
@@ -84,7 +84,7 @@ let gen_mes_payload : type a b. (a,b) message_type_sing -> (a,b) message Gen.t  
 let arb_message m_sing =
   make
     ~print:(pprint_message)
-    (gen_mes_payload @@ mk_message_type_sing m_sing)
+    (gen_message @@ mk_message_type_proof m_sing)
 
 let message_binary_test  m_sing =
   QCheck.Test.make ~count:1000 (arb_message m_sing) (fun req ->

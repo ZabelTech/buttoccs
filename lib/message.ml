@@ -105,15 +105,15 @@ let get_message_sing : type a b. (a,b) message -> (a,b) message_sing = function
   | (Response ({action = Scrape;   _},_)) -> ScrapeRes
   | (Response ({action = Error;   _},_))  -> ErrorRes
 
-type ('a,_) message_type_sing =
-  | SRequest : (('a,request)  message_sing) -> ('a,request) message_type_sing
-  | SResponse: (('a,response) message_sing) -> ('a,response) message_type_sing
+type ('a,_) message_type_proof =
+  | Is_request : (('a,request)  message_sing) -> ('a,request) message_type_proof
+  | Is_response: (('a,response) message_sing) -> ('a,response) message_type_proof
 
-let mk_message_type_sing : type a b. (a,b) message_sing -> (a,b) message_type_sing = function
-  | ConnectReq  as a -> SRequest a
-  | AnnounceReq as a -> SRequest a
-  | ScrapeReq   as a -> SRequest a
-  | ConnectRes  as a -> SResponse a
-  | AnnounceRes as a -> SResponse a
-  | ScrapeRes   as a -> SResponse a
-  | ErrorRes    as a -> SResponse a
+let mk_message_type_proof : type a b. (a,b) message_sing -> (a,b) message_type_proof = function
+  | ConnectReq  as a -> Is_request a
+  | AnnounceReq as a -> Is_request a
+  | ScrapeReq   as a -> Is_request a
+  | ConnectRes  as a -> Is_response a
+  | AnnounceRes as a -> Is_response a
+  | ScrapeRes   as a -> Is_response a
+  | ErrorRes    as a -> Is_response a
