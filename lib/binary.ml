@@ -22,6 +22,8 @@ let (let*) o f =
 
 module type Binary = sig
   type t
+  val calc_size : t -> int
+  val min_size  : int
   val slurp : bytes -> int -> (int * t,parse_error) result
   val barf  : bytes -> int -> t -> int
 end
@@ -47,26 +49,36 @@ module type Some_response = sig
 end
 
 module Int64_binary : Binary with type t := int64 = struct
+  let min_size    = 8
+  let calc_size _ = 8
   let slurp = get_sized 8 get_int64_be
   let barf  = put_sized 8 set_int64_be
 end
 
 module Int32_binary : Binary with type t := int32 = struct
+  let min_size    = 4
+  let calc_size _ = 4
   let slurp = get_sized 4 get_int32_be
   let barf  = put_sized 4 set_int32_be
 end
 
 module UInt16_binary : Binary with type t := uint16 = struct
+  let min_size    = 2
+  let calc_size _ = 2
   let slurp = get_sized 2 (fun bs offset -> Unsigned.UInt16.of_int @@ get_uint16_be bs offset)
   let barf  = put_sized 2 (fun bs offset x -> set_uint16_be bs offset @@ Unsigned.UInt16.to_int x)
 end
 
 module Bytes20_binary : Binary with type t := bytes = struct
-  let slurp = get_sized 20 (fun bs offset -> sub bs offset @@ offset + 20)
+  let min_size    = 20
+  let calc_size _ = 20
+  let slurp = get_sized 20 (fun bs offset -> sub bs offset 20)
   let barf  = put_sized 20 (fun bs offset x -> blit x 0 bs offset 20)
 end
 
 module String_binary : Binary with type t := string = struct
+  let min_size  = 0
+  let calc_size = String.length
   let slurp bs offset =
     let rest_length = length bs - offset in
     get_sized rest_length (fun _ _ -> sub_string bs offset rest_length) bs offset
@@ -77,6 +89,8 @@ module String_binary : Binary with type t := string = struct
 end
 
 module Event_binary : Binary with type t := event = struct
+  let min_size    = 4
+  let calc_size _ = 4
   let int2Event = function
     | 0 -> ok None
     | 1 -> ok Completed
@@ -129,6 +143,8 @@ end
  *)
 
 module Action_binary (A : Some_action) : Binary with type t := A.t action = struct
+  let min_size    = 4
+  let calc_size _ = 4
   let slurp bs offset =
     let* (offset,res) = Int32_binary.slurp bs offset
     in if Int32.to_int res = A.idx
@@ -140,6 +156,8 @@ end
 
 module Binary_header (A : Some_action) : Binary with type t := A.t header = struct
   module B = Action_binary(A)
+  let min_size    = 8
+  let calc_size _ = 8
 
   let slurp bs offset =
     let* (offset,action)         = B.slurp bs offset in
@@ -153,6 +171,8 @@ end
 
 module Binary_request (R : Some_request) : Binary with type t = (R.t,request) message = struct
   type t = (R.t,request) message
+  let min_size                    = 8 + R.Header.min_size + R.Payload.min_size
+  let calc_size (Request (_,h,p)) = 8 + R.Header.calc_size h + R.Payload.calc_size p
 
   let slurp bs offset =
     let* (offset,connection_id) = Int64_binary.slurp bs offset in
@@ -168,6 +188,8 @@ end
 
 module Binary_response (R : Some_response) : Binary with type t = (R.t,response) message = struct
   type t = (R.t,response) message
+  let min_size                   = R.Header.min_size + R.Payload.min_size
+  let calc_size (Response (h,p)) = R.Header.calc_size h + R.Payload.calc_size p
 
   let slurp bs offset =
     let* (offset,header)  = R.Header.slurp bs offset in
@@ -187,6 +209,8 @@ module Connect_request : Some_request with type t = connect = struct
   module Payload : Binary with type t = connect Request.payload= struct
     open Request
     type t = connect Request.payload
+    let min_size    = 0
+    let calc_size _ = 0
     let slurp _ offset   = ok (offset,Connect)
     let barf  _ offset _ = offset
   end
@@ -199,6 +223,8 @@ module Announce_request : Some_request with type t = announce = struct
 
   module Payload : Binary with type t := announce Request.payload = struct
     open Request
+    let min_size    = 82
+    let calc_size _ = 82
 
     let slurp bs offset =
       let* (offset,info_hash)  = Bytes20_binary.slurp bs offset in
@@ -246,6 +272,8 @@ module Scrape_request : Some_request with type t = scrape = struct
 
   module Payload : Binary with type t := scrape Request.payload = struct
     open Request
+    let min_size    = 20
+    let calc_size _ = 20
 
     let slurp bs offset =
       let* (offset,info_hash) = Bytes20_binary.slurp bs offset in
@@ -264,6 +292,8 @@ module Connect_response : Some_response with type t = connect = struct
 
   module Payload : Binary with type t := connect Response.payload = struct
     open Response
+    let min_size    = 8
+    let calc_size _ = 8
 
     let slurp bs offset =
       let* (offset,connection_id) = Int64_binary.slurp bs offset
@@ -280,9 +310,11 @@ module Announce_response : Some_response with type t = announce = struct
 
   module Payload : Binary with type t := announce Response.payload = struct
     open Response
+    let min_size = 12
+    let calc_size (Announce x) = min_size + (List.length x.peers * 6)
 
     let rec slurpPeers peers bs = function
-      | offset when offset >= length bs -> ok (offset,peers)
+      | offset when offset >= length bs -> ok (offset,(List.rev peers))
       | offset ->
          let* (offset,ip)   = Int32_binary.slurp bs offset in
          let* (offset,port) = UInt16_binary.slurp bs offset in
@@ -322,6 +354,8 @@ module Scrape_response : Some_response with type t = scrape = struct
 
   module Payload : Binary with type t := scrape Response.payload = struct
     open Response
+    let min_size    = 12
+    let calc_size _ = 12
 
     let slurp bs offset =
       let* (offset,complete)   = Int32_binary.slurp bs offset in
@@ -345,6 +379,8 @@ module Error_response : Some_response with type t = error = struct
 
   module Payload : Binary with type t := error Response.payload = struct
     open Response
+    let min_size = 0
+    let calc_size (Error x) = String_binary.calc_size x.error
 
     let slurp bs offset =
       let* (offset,str) = String_binary.slurp bs offset in
@@ -372,3 +408,13 @@ let build_message (type a) (type b) (bs : bytes) (message : (a,b) message) =
   let m = get_binary_message (get_message_sing message) in
   let module M = (val m : Binary with type t = (a,b) message) in
   M.barf bs 0 message
+
+let min_size (type a) (type b) (message_sing : (a,b) message_sing) =
+  let m = get_binary_message message_sing in
+  let module M = (val m : Binary with type t = (a,b) message) in
+  M.min_size
+
+let calc_size (type a) (type b) (message : (a,b) message) =
+  let m = get_binary_message (get_message_sing message) in
+  let module M = (val m : Binary with type t = (a,b) message) in
+  M.calc_size message
