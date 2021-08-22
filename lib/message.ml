@@ -1,3 +1,4 @@
+type uint16        = Unsigned.UInt16.t
 type ipv4          = IPv4 of int32
 type connection_id = int64
 
@@ -13,7 +14,7 @@ type connect  = private C
 type scrape   = private S
 type error    = private E
 
-type peer      = { ip : ipv4; port : int }
+type peer      = { ip : ipv4; port : uint16 }
 type info_hash = InfoHash of bytes  (* [20] *)
 type peer_id   = PeerId of bytes  (* [20] *)
 
@@ -40,7 +41,7 @@ module Request = struct
                          ip         : ipv4;
                          key        : int32;
                          num_want   : int32;
-                         port       : int; }
+                         port       : uint16; }
 
   type scrape_data = { info_hash : info_hash }
 

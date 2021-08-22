@@ -1,7 +1,6 @@
 open Bytes
 open Result
 open Message
-let undefined = assert false
 
 type parse_error = NotEnoughData
                  | UnexpectedAction
@@ -53,9 +52,9 @@ module Int32_binary : Binary with type t := int32 = struct
   let barf  = put_sized 4 set_int32_be
 end
 
-module UInt16_binary : Binary with type t := int = struct
-  let slurp = get_sized 2 get_uint16_be
-  let barf  = put_sized 2 set_uint16_be
+module UInt16_binary : Binary with type t := uint16 = struct
+  let slurp = get_sized 2 (fun bs offset -> Unsigned.UInt16.of_int @@ get_uint16_be bs offset)
+  let barf  = put_sized 2 (fun bs offset x -> set_uint16_be bs offset @@ Unsigned.UInt16.to_int x)
 end
 
 module Bytes20_binary : Binary with type t := bytes = struct

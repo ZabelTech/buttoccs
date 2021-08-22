@@ -1,4 +1,4 @@
 (library
- (name buttoccs)
+ (name Buttoccs)
  (libraries integers)
 )
