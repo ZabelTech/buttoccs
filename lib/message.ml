@@ -117,3 +117,15 @@ let mk_message_type_proof : type a b. (a,b) message_sing -> (a,b) message_type_p
   | AnnounceRes as a -> Is_response a
   | ScrapeRes   as a -> Is_response a
   | ErrorRes    as a -> Is_response a
+
+module type Message_type = sig
+  type t
+  type a
+  val sing : (a,t) message_sing
+end
+
+let to_message_type (type action) (type ty) sing = (module struct
+    type a = action
+    type t = ty
+    let sing = sing
+  end : Message_type with type t = ty and type a = action)

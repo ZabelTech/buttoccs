@@ -1,6 +1,6 @@
 open Buttoccs
 open Message
-open Binary
+open Message_binary
 open Pretty
 open QCheck
 open Gen
@@ -86,13 +86,21 @@ let arb_message m_sing =
     ~print:(pprint_message)
     (gen_message @@ mk_message_type_proof m_sing)
 
-let message_binary_test  m_sing =
+exception TestException of string
+
+let message_binary_test (type action) (type ty) m_sing =
+  let m = to_message_type m_sing in
+  let module M = (val m : Message_type with type t = ty and type a = action) in
+  let module B = Mk_message_binary(M) in
   QCheck.Test.make ~count:1000 (arb_message m_sing) (fun req ->
-      let size   = calc_size req in
+      let size   = B.size_of (Some req) in
       let bs     = Bytes.create size in
-      let _      = build_message bs req in
-      let result = parse_message bs (get_message_sing req) in
-      result = Ok (size,req)
+      let _      = B.barf req bs 0 in
+      let (_size,result) = B.slurp bs 0 in
+      match result with
+      | Ok r when r = req -> true
+      | Ok r    -> raise(TestException (String.concat "\n" [pprint_message req; pprint_message r]))
+      | Error r -> raise(TestException (pprint_binary_error r))
     )
 
 let qcheck_tests = [
@@ -106,6 +114,11 @@ let qcheck_tests = [
 
 let suite =
   let open OUnit in
-  "Binary Idempotency " >::: List.map QCheck_ounit.to_ounit_test qcheck_tests
+  "Binary Idempotency " >::: List.map (QCheck_ounit.to_ounit_test) qcheck_tests
 
-let _ = QCheck_runner.run_tests qcheck_tests
+let _ =
+  QCheck_runner.run_tests
+          ~colors:true
+          ~verbose:true
+          ~long:true
+          qcheck_tests

@@ -1,3 +1,5 @@
+open Binary
+open Message_binary
 open Message
 open Printf
 
@@ -61,3 +63,9 @@ let pprint_res_payload : type a. a Response.payload -> string = function
 let pprint_message : type a b. (a,b) message -> string = function
   | (Request (c_id,h,p)) -> sprintf "Request { connection_id: %Li, header: %s, payload = %s }" c_id (pprint_header h) (pprint_req_payload p)
   | (Response (h,p))     -> sprintf "Response { header: %s, payload = %s }" (pprint_header h) (pprint_res_payload p)
+
+let pprint_binary_error = function
+  | Not_enough_bytes    -> "Not_enough_bytes"
+  | Unknown_event _     -> "Unknown_event"
+  | Unexpected_action _ -> "Unexpected_action"
+  | _ -> "<unknown>"
